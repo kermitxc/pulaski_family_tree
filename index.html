@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" data-keep="">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-keep="">
+<title data-keep="">Ród Pułaskich Tree Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" data-keep="">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" data-keep="">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;1,400&amp;family=Alegreya+SC:wght@500;700&amp;family=Alegreya+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet" data-keep="">
+<style id="css">
+/* Layout idea: a drafting table. One quiet toolbar, a pannable sheet holding the pedigree
+   (generations numbered in Roman numerals along its edge), and a register card on the right
+   for the selected person. Azure comes from the Ślepowron shield, crimson marks the main line. */
+:root{
+  --paper:#e9ecf1;
+  --card:#fbfcfe;
+  --ink:#152033;
+  --muted:#5a677b;
+  --rule:#bcc5d3;
+  --azure:#1d4f91;
+  --azure-soft:#dbe6f5;
+  --crimson:#a1202c;
+  --warn:#8a5a00;
+  --font-name:"Alegreya SC","Alegreya",Georgia,"Times New Roman",serif;
+  --font-text:"Alegreya",Georgia,"Times New Roman",serif;
+  --font-ui:"Alegreya Sans","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e1522;--card:#182233;--ink:#e7ebf2;--muted:#97a4b8;--rule:#33415a;
+    --azure:#86b4f0;--azure-soft:#1f3350;--crimson:#f0777c;--warn:#e0b25a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e1522;--card:#182233;--ink:#e7ebf2;--muted:#97a4b8;--rule:#33415a;
+  --azure:#86b4f0;--azure-soft:#1f3350;--crimson:#f0777c;--warn:#e0b25a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:400 15px/1.35 var(--font-ui);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--azure);outline-offset:2px}
+
+.app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--rule)}
+.brand{display:flex;flex-direction:column;margin-right:auto;min-width:0}
+.brand h1{margin:0;font:700 24px/1.05 var(--font-name);letter-spacing:.02em;text-wrap:balance}
+.brand p{margin:2px 0 0;font:italic 400 14px/1.2 var(--font-text);color:var(--muted)}
+.grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--rule);background:var(--card);padding:5px 11px;border-radius:3px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--azure);color:var(--azure)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--azure);border-color:var(--azure);color:var(--card)}
+.btn.primary:hover:not(:disabled){color:var(--card);filter:brightness(1.1)}
+.btn.danger:hover:not(:disabled),.btn.danger.armed{border-color:var(--crimson);color:var(--crimson)}
+.btn.sq{min-width:32px;padding:5px 0;text-align:center}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.seg button{border:0;background:var(--card);padding:5px 10px;cursor:pointer;font-weight:500}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--azure-soft);color:var(--azure)}
+.search{display:flex;align-items:center;gap:6px}
+.search input{width:170px;padding:5px 9px;border:1px solid var(--rule);border-radius:3px;background:var(--paper)}
+.search span{font-size:13px;color:var(--muted);min-width:34px;font-variant-numeric:tabular-nums}
+.pill{font-size:13px;padding:3px 9px;border-radius:999px;border:1px solid var(--rule);color:var(--muted);white-space:nowrap}
+.pill.dirty{border-color:var(--warn);color:var(--warn)}
+.pill.dirty::before{content:"● "}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:0}
+#stage{position:relative;overflow:hidden;cursor:grab;touch-action:none;user-select:none;
+  background-color:var(--paper);
+  background-image:radial-gradient(var(--rule) 1px,transparent 1.2px);background-size:22px 22px}
+#stage.drag{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#world.glide{transition:transform .35s ease}
+@media (prefers-reduced-motion: reduce){#world.glide{transition:none}}
+#links{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+#links path{fill:none;stroke:var(--muted);stroke-width:1.3}
+#links path.main{stroke:var(--crimson);stroke-width:2.4}
+.gen{position:absolute;font:700 20px/1 var(--font-name);color:var(--muted);letter-spacing:.06em;white-space:nowrap}
+.gen small{display:block;font:400 11px/1.2 var(--font-ui);letter-spacing:.08em;text-transform:uppercase}
+.card{position:absolute;background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--rule);border-radius:3px;
+  padding:6px 9px 7px;cursor:pointer;overflow-wrap:anywhere}
+.card:hover{border-color:var(--azure)}
+.card.line{border-left-color:var(--crimson)}
+.card.line .nm{color:var(--crimson)}
+.card.hit{background:var(--azure-soft)}
+.card.sel{outline:2px solid var(--azure);outline-offset:1px;box-shadow:0 6px 18px rgba(10,25,60,.22)}
+.card .nm{font:700 17px/1.15 var(--font-name);letter-spacing:.015em}
+.card .nm.blank{font:italic 400 15px/1.15 var(--font-text);color:var(--muted)}
+.card .dt{font:italic 400 15px/1.15 var(--font-text);color:var(--muted);margin-left:5px;font-variant-numeric:tabular-nums}
+.card .x{display:block;font:italic 400 14px/1.2 var(--font-text);color:var(--crimson)}
+.card .sp{display:block;font:400 15px/1.2 var(--font-text);margin-top:1px}
+.card .sp i{color:var(--muted);white-space:nowrap}
+.card .dt{white-space:nowrap}
+.card .dot{position:absolute;right:5px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+.tog{position:absolute;min-width:20px;height:20px;padding:0 4px;border-radius:10px;border:1px solid var(--muted);background:var(--card);
+  font:700 12px/18px var(--font-ui);cursor:pointer;color:var(--muted);text-align:center}
+.tog:hover{border-color:var(--azure);color:var(--azure)}
+.banner{position:absolute;font:700 14px/1 var(--font-name);letter-spacing:.09em;color:var(--azure);background:var(--paper);
+  border:1px solid var(--azure);padding:3px 8px 4px;white-space:nowrap}
+.hint{position:absolute;left:14px;bottom:10px;font-size:13px;color:var(--muted);background:var(--card);border:1px solid var(--rule);padding:3px 9px;border-radius:3px;pointer-events:none}
+.zoom{position:absolute;right:14px;bottom:10px;display:flex;gap:6px}
+
+#panel{background:var(--card);border-left:1px solid var(--rule);overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+#panel h2{margin:0;font:700 21px/1.1 var(--font-name);letter-spacing:.02em;overflow-wrap:anywhere}
+#panel .sub{margin:0;font-size:13px;color:var(--muted)}
+#panel h3{margin:0;font:700 12px/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.fld{display:flex;flex-direction:column;gap:3px}
+.fld label,.chk{font-size:13px;color:var(--muted)}
+.fld input,.fld textarea,.fld select,.row input{padding:6px 8px;border:1px solid var(--rule);border-radius:3px;background:var(--paper);width:100%;min-width:0}
+.fld textarea{min-height:64px;resize:vertical}
+.chk{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:15px}
+.chk input{width:16px;height:16px;accent-color:var(--crimson)}
+.row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto;gap:6px;align-items:center}
+.stack{display:flex;flex-direction:column;gap:8px}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.sect{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--rule)}
+.stats{display:flex;gap:18px}
+.stats b{display:block;font:700 26px/1 var(--font-name);font-variant-numeric:tabular-nums}
+.stats span{font-size:13px;color:var(--muted)}
+.help{margin:0;font-size:14px;color:var(--muted);max-width:60ch}
+
+dialog{border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);padding:18px;width:min(640px,calc(100% - 32px))}
+dialog::backdrop{background:rgba(8,14,26,.55)}
+dialog h2{margin:0 0 6px;font:700 21px/1.1 var(--font-name)}
+dialog p{margin:0 0 10px;color:var(--muted);font-size:14px}
+dialog textarea{width:100%;height:260px;font:13px/1.35 ui-monospace,Menlo,Consolas,monospace;padding:8px;border:1px solid var(--rule);border-radius:3px;background:var(--paper);color:var(--ink);resize:vertical}
+dialog .acts{margin-top:10px;justify-content:flex-end}
+.err{color:var(--crimson);font-size:14px;margin:8px 0 0;min-height:1.2em}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:3px;font-size:14px;max-width:calc(100% - 32px);opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+@media (max-width:780px){
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,46%)}
+  #panel{border-left:0;border-top:1px solid var(--rule)}
+  .brand h1{font-size:20px}
+  .search input{width:130px}
+  .hint{display:none}
+}
+</style>
+</head>
+<body>
+<template id="shell">
+<div class="app">
+  <header class="bar">
+    <div class="brand"><h1 id="t-title"></h1><p id="t-sub"></p></div>
+    <div class="search"><input id="q" type="search" placeholder="Find a person" autocomplete="off" aria-label="Find a person"><span id="q-n"></span></div>
+    <div class="grp">
+      <button class="btn" id="b-undo" type="button">Undo</button>
+      <button class="btn" id="b-redo" type="button">Redo</button>
+    </div>
+    <div class="seg" role="group" aria-label="Tree direction">
+      <button id="b-lr" type="button">Sideways</button><button id="b-td" type="button">Top-down</button>
+    </div>
+    <div class="grp">
+      <button class="btn" id="b-import" type="button">Import</button>
+      <button class="btn" id="b-export" type="button">Export</button>
+      <button class="btn danger" id="b-reset" type="button">Reset to PDF</button>
+    </div>
+    <div class="grp">
+      <span class="pill" id="status"></span>
+      <button class="btn primary" id="b-save" type="button" hidden="">Save to page</button>
+    </div>
+  </header>
+  <main>
+    <div id="stage" aria-label="Family tree">
+      <div id="world"><svg id="links" width="1" height="1" aria-hidden="true"></svg></div>
+      <div class="hint">Drag to move · scroll to zoom · click a person to edit</div>
+      <div class="zoom">
+        <button class="btn sq" id="b-out" type="button" aria-label="Zoom out">−</button>
+        <button class="btn sq" id="b-in" type="button" aria-label="Zoom in">+</button>
+        <button class="btn" id="b-fit" type="button">Whole tree</button>
+      </div>
+    </div>
+    <aside id="panel" aria-label="Details"></aside>
+  </main>
+</div>
+<dialog id="dlg-export">
+  <h2>Export</h2>
+  <p>The whole tree as JSON. Keep a copy as a backup, or paste it into Import later.</p>
+  <textarea id="ex-text" readonly="" aria-label="Tree as JSON"></textarea>
+  <div class="acts">
+    <button class="btn" id="ex-dl" type="button" hidden="">Download file</button>
+    <button class="btn primary" id="ex-copy" type="button">Copy</button>
+    <button class="btn" data-close="" type="button">Close</button>
+  </div>
+</dialog>
+<dialog id="dlg-import">
+  <h2>Import</h2>
+  <p>Paste JSON exported from this tool, or choose a file. It replaces the current tree; Undo brings the old one back.</p>
+  <textarea id="im-text" aria-label="JSON to import" placeholder="{&quot;title&quot;:&quot;…&quot;,&quot;root&quot;:{&quot;n&quot;:&quot;…&quot;,&quot;c&quot;:[]}}"></textarea>
+  <p class="err" id="im-err" role="alert"></p>
+  <div class="acts">
+    <input id="im-file" type="file" accept=".json,application/json,text/plain" aria-label="Choose a JSON file">
+    <button class="btn primary" id="im-go" type="button">Replace tree</button>
+    <button class="btn" data-close="" type="button">Cancel</button>
+  </div>
+</dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+</template>
+<script type="application/json" id="tree-data">{"title":"Ród Pułaskich","subtitle":"herbu Ślepowron · drzewo genealogiczne","arms":[{"herb":"Ślepowron","family":"Pułascy"},{"herb":"Kolumna","family":"Walewscy"},{"herb":"Jastrzębiec","family":"Wodzińscy"},{"herb":"Prawdzic","family":"Brochoccy"},{"herb":"Sas","family":"Tymowscy"},{"herb":"Sas","family":"Żurakowscy"},{"herb":"Topór (Starża)","family":"Jakubowscy"},{"herb":"Leszczyc","family":"Grabiankowie"}],"savedAt":1794269112627,"root":{"id":"p093","n":"Józef Pułaski","d":"1704–1770","x":"","s":[{"n":"Marianna Zielińska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p001","n":"Anna","d":"ur. 7.10.1738","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p002","n":"Wiktoria","d":"ur. 8.9.1740","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p012","n":"Joanna","d":"ur. 9.9.1741","x":"","s":[{"n":"Anastazy Walewski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p003","n":"Józefa","d":"ur. 1868","x":"","s":[{"n":"August Prawdzic Brochocki","d":""}],"line":false,"banner":"","note":"The PDF prints \"ur. 1868\", which does not fit a mother born in 1741. Possibly 1768.","c":[]},{"id":"p011","n":"Ksawery","d":"† 1803","x":"","s":[{"n":"Maria Jastrzębiec Wodzińska","d":""}],"line":false,"banner":"Walewski","note":"","c":[{"id":"p004","n":"Kazimierz","d":"† 1840","x":"","s":[{"n":"N. Tymowska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p009","n":"Gabriela","d":"","x":"","s":[{"n":"Michał Sas Tymowski","d":""}],"line":false,"banner":"Tymowski","note":"","c":[{"id":"p005","n":"Michalina","d":"","x":"","s":[{"n":"Budziszewski","d":""},{"n":"Bolesław Trzciński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p006","n":"Ignacy","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p007","n":"Józef","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p008","n":"Kazimierz","d":"","x":"","s":[{"n":"Helena Kamieńska","d":""}],"line":false,"banner":"","note":"","c":[]}]},{"id":"p010","n":"Zofia","d":"","x":"","s":[{"n":"Henryk Kamieński","d":""}],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p013","n":"Franciszek","d":"26.11.1743–1769","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p014","n":"Kazimierz","d":"4.8.1746–9.10.1779","x":"† Savannah, Georgia, USA","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p082","n":"Antoni","d":"1747–1813","x":"","s":[],"line":true,"banner":"","note":"","c":[{"id":"p081","n":"Kazimierz","d":"1784–1856","x":"","s":[{"n":"Joanna Nepomucena Świętosławska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p015","n":"Ludwika","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p073","n":"Adam Eliasz","d":"1806–1882","x":"","s":[{"n":"Julia Gadomska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p016","n":"Amelia","d":"† 1924","x":"","s":[{"n":"Adam Gadomski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p036","n":"Kazimierz Ferdynand","d":"1846–1925","x":"","s":[{"n":"Jadwiga Starża Jakubowska","d":""}],"line":false,"banner":"Pułaski","note":"","c":[{"id":"p022","n":"Józef","d":"1873–1942","x":"","s":[{"n":"Wanda Sadowska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p019","n":"Kazimierz","d":"ur. 1895","x":"","s":[{"n":"Mieczysława Jagosz","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p017","n":"Kazimierz","d":"ur. 1940","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p018","n":"Zuzanna","d":"ur. 1947","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p020","n":"Szczęsny","d":"1900–1966","x":"","s":[{"n":"Izabela Andrzejewska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p021","n":"Anna","d":"1911–1946","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p025","n":"Franciszek","d":"1875–1956","x":"","s":[{"n":"Helena Turowska-Słubicka","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p023","n":"Jadwiga","d":"ur. 1906","x":"","s":[{"n":"Andrzej Ostrowski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p024","n":"Zofia","d":"1911–1914","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p026","n":"Adam","d":"1879–1967","x":"","s":[{"n":"Janina Redczuk","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p035","n":"Helena","d":"1885–1924","x":"","s":[{"n":"Mikołaj Grabianka-Leszczyc","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p027","n":"Kazimierz","d":"ur. 1912","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p034","n":"Antoni","d":"1913–1963","x":"","s":[{"n":"Amelia Boguszewicz","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p028","n":"Mikołaj","d":"ur. 1943","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p029","n":"Stanisław","d":"ur. 1944","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p030","n":"Michał","d":"ur. 1946","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p031","n":"Maria","d":"ur. 1948","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p032","n":"Ewa","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p033","n":"Jadwiga","d":"1955–1956","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]}]},{"id":"p072","n":"Maria","d":"1851–1926","x":"","s":[{"n":"Józef Żurakowski","d":"1835–1920"}],"line":true,"banner":"Żurakowski","note":"","c":[{"id":"p037","n":"Czesław","d":"1890–1918","x":"","s":[{"n":"Zofia Duszyńska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p038","n":"Henryk","d":"1889–1919","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p047","n":"Stefania","d":"1887–1945","x":"","s":[{"n":"Stanisław Berezowski","d":""}],"line":false,"banner":"Berezowski","note":"","c":[{"id":"p039","n":"Anna","d":"ur. 1923","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p042","n":"Bolesław","d":"ur. 1916","x":"","s":[{"n":"Stefania Chmielewska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p040","n":"Elżbieta","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p041","n":"Barbara","d":"ur. 1952","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p046","n":"Maria Antonina","d":"ur. 1915","x":"","s":[{"n":"Szczepan Grodzicki","d":""},{"n":"Jerzy Rogowski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p043","n":"Jacek","d":"1938–1939","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p044","n":"Michał Adam","d":"ur. 1941","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p045","n":"Maria Ewa","d":"ur. 1944","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p053","n":"Julian","d":"1886–1964","x":"","s":[{"n":"Maria Janina Surzycka","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p051","n":"Jerzy","d":"ur. 1914","x":"","s":[{"n":"Magdalena Kosińska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p048","n":"Krzysztof","d":"ur. 1947","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p049","n":"Barbara","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p050","n":"Małgorzata","d":"ur. 1952","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p052","n":"Elżbieta","d":"ur. 1913","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p063","n":"Adam","d":"1884–1951","x":"","s":[{"n":"Bogumiła Ostaszewska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p054","n":"Mirosław","d":"ur. 1917","x":"","s":[{"n":"Elżbieta Wiercińska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p056","n":"Maria","d":"ur. 1919","x":"","s":[{"n":"Julian Adamek","d":"1924–1967"}],"line":true,"banner":"","note":"","c":[{"id":"p055","n":"Maria Irena","d":"ur. 1964","x":"","s":[{"n":"Roman Ulbrich","d":"ur. 1952 - 2025 "}],"line":true,"banner":"","note":"","c":[{"id":"ps85bb9c","n":"Anna","d":"ur. 1974","x":"","s":[{"n":"Markus","d":"Thieme"}],"line":false,"banner":"Thieme","note":"","c":[{"id":"pkmbddb8","n":"Nella","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p2rx90db","n":"Camillo","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"pra5uuur","n":"Adam","d":"ur. 1981","x":"","s":[{"n":"Lia Hanelius","d":""}],"line":true,"banner":"Ulbrich","note":"","c":[{"id":"pu43vyah","n":"Owen","d":"ur. 2015","x":"","s":[],"line":true,"banner":"","note":"","c":[]},{"id":"pi0zbqki","n":"Charlotte","d":"ur. 2015","x":"","s":[],"line":true,"banner":"","note":"","c":[]}]},{"id":"p5nyykgd","n":"Agnieszka","d":"ur. 1981","x":"","s":[{"n":"Tomasz","d":"Banasiewicz"}],"line":false,"banner":"Banasiewicz","note":"","c":[{"id":"p9dvdacz","n":"Oliwia","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"pabata6z","n":"Tosia","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"pyhm228t","n":"Maks","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]}]},{"id":"p062","n":"Stanisław","d":"ur. 1929","x":"","s":[{"n":"Teresa Dunajska","d":"1932–1962"},{"n":"Daniela Filipiak","d":"ur. 1935"}],"line":false,"banner":"","note":"","c":[{"id":"p060","n":"Małgorzata","d":"ur. 1961","x":"","s":[{"n":"Czesław Zaniewicz","d":"ur. 1957"}],"line":false,"banner":"Zaniewicz","note":"","c":[{"id":"p058","n":"Michał","d":"ur. 1985","x":"","s":[{"n":"Agnieszka Staniszewska","d":"ur. 21.12.1989"}],"line":false,"banner":"","note":"","c":[{"id":"p057","n":"Kacper","d":"ur. 10.9.2013","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p059","n":"Piotr","d":"ur. 1987","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p061","n":"Jolanta","d":"ur. 1967","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p064","n":"Ewa","d":"1882–1930","x":"","s":[{"n":"Antoni Koziński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p065","n":"Ksawery","d":"1875–1932","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p071","n":"Stanisław","d":"1871–1941","x":"","s":[{"n":"Halina Ostaszewska","d":"1870–1959"}],"line":false,"banner":"","note":"","c":[{"id":"p066","n":"Maria","d":"ur. 1904","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p070","n":"Irena","d":"ur. 1899","x":"","s":[{"n":"Aleksander Boczkowski","d":"1890–1966"}],"line":false,"banner":"","note":"","c":[{"id":"p069","n":"Stanisław","d":"ur. 1919","x":"","s":[{"n":"Maria Regina Malinowska","d":"ur. 1923"}],"line":false,"banner":"","note":"","c":[{"id":"p068","n":"Ryszard","d":"ur. 8.1.1948","x":"","s":[{"n":"Sharon Keough","d":"ur. 31.10.1949"}],"line":false,"banner":"","note":"","c":[{"id":"p067","n":"Alexandra","d":"ur. 7.8.1970","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]}]}]}]}]},{"id":"p074","n":"Eufemia","d":"† 1850","x":"","s":[{"n":"Bolesław Burzyński","d":""}],"line":false,"banner":"","note":"On the PDF the \"∞ Bolesław Burzyński\" strip spans both Eufemia and Antonina, and the line to the Burzyński children starts between them. The children are attached to Antonina here; check which sister was their mother.","c":[]},{"id":"p080","n":"Antonina","d":"† 1868","x":"","s":[{"n":"Bolesław Burzyński","d":""}],"line":false,"banner":"Burzyński","note":"On the PDF the \"∞ Bolesław Burzyński\" strip spans both Eufemia and Antonina, and the line to the Burzyński children starts between them. The children are attached to Antonina here; check which sister was their mother.","c":[{"id":"p075","n":"Zofia","d":"ur. 1898","x":"","s":[],"line":false,"banner":"","note":"Printed as \"ur. 1898\" in the same box as Kazimierz 1846–1920, although the mother died in 1868. She may belong one generation lower.","c":[]},{"id":"p076","n":"Ewelina","d":"ur. 1897","x":"","s":[],"line":false,"banner":"","note":"Printed as \"ur. 1897\" in the same box as Kazimierz 1846–1920, although the mother died in 1868. She may belong one generation lower.","c":[]},{"id":"p079","n":"Kazimierz","d":"1846–1920","x":"","s":[{"n":"Jadwiga Pruszyńska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p077","n":"Ludwik „Bebcio”","d":"1886–1963","x":"","s":[{"n":"hr. Broel-Plater","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p078","n":"Jadwiga","d":"ur. 1890","x":"","s":[{"n":"Borys Poliakow","d":""}],"line":false,"banner":"","note":"","c":[]}]}]}]}]},{"id":"p084","n":"Józefa","d":"","x":"","s":[{"n":"Marcin Sławoszewski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p083","n":"córka","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p085","n":"Monika","d":"ur. 1749","x":"","s":[{"n":"Stanisław Rowuziński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p090","n":"Paulina","d":"ur. 1750","x":"","s":[{"n":"Antoni Suffczyński","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p088","n":"Kazimierz","d":"","x":"","s":[],"line":false,"banner":"","note":"The line to Józefa and \"syn\" leaves the PDF box on the border between this Kazimierz and the \"córka\" of Józefa Sławoszewska. They are attached here; check which of the two was their parent.","c":[{"id":"p086","n":"Józefa","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p087","n":"syn","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p089","n":"Józef","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p091","n":"Małgorzata","d":"","x":"","s":[{"n":"Adam Skilski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p092","n":"Teresa","d":"ur. 1754","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}}</script>
+<script type="application/json" id="tree-original">{"title":"Ród Pułaskich","subtitle":"herbu Ślepowron · drzewo genealogiczne","savedAt":0,"arms":[{"herb":"Ślepowron","family":"Pułascy"},{"herb":"Kolumna","family":"Walewscy"},{"herb":"Jastrzębiec","family":"Wodzińscy"},{"herb":"Prawdzic","family":"Brochoccy"},{"herb":"Sas","family":"Tymowscy"},{"herb":"Sas","family":"Żurakowscy"},{"herb":"Topór (Starża)","family":"Jakubowscy"},{"herb":"Leszczyc","family":"Grabiankowie"}],"root":{"id":"p093","n":"Józef Pułaski","d":"1704–1770","x":"","s":[{"n":"Marianna Zielińska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p001","n":"Anna","d":"ur. 7.10.1738","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p002","n":"Wiktoria","d":"ur. 8.9.1740","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p012","n":"Joanna","d":"ur. 9.9.1741","x":"","s":[{"n":"Anastazy Walewski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p003","n":"Józefa","d":"ur. 1868","x":"","s":[{"n":"August Prawdzic Brochocki","d":""}],"line":false,"banner":"","note":"The PDF prints \"ur. 1868\", which does not fit a mother born in 1741. Possibly 1768.","c":[]},{"id":"p011","n":"Ksawery","d":"† 1803","x":"","s":[{"n":"Maria Jastrzębiec Wodzińska","d":""}],"line":false,"banner":"Walewski","note":"","c":[{"id":"p004","n":"Kazimierz","d":"† 1840","x":"","s":[{"n":"N. Tymowska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p009","n":"Gabriela","d":"","x":"","s":[{"n":"Michał Sas Tymowski","d":""}],"line":false,"banner":"Tymowski","note":"","c":[{"id":"p005","n":"Michalina","d":"","x":"","s":[{"n":"Budziszewski","d":""},{"n":"Bolesław Trzciński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p006","n":"Ignacy","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p007","n":"Józef","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p008","n":"Kazimierz","d":"","x":"","s":[{"n":"Helena Kamieńska","d":""}],"line":false,"banner":"","note":"","c":[]}]},{"id":"p010","n":"Zofia","d":"","x":"","s":[{"n":"Henryk Kamieński","d":""}],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p013","n":"Franciszek","d":"26.11.1743–1769","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p014","n":"Kazimierz","d":"4.8.1746–9.10.1779","x":"† Savannah, Georgia, USA","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p082","n":"Antoni","d":"1747–1813","x":"","s":[],"line":true,"banner":"","note":"","c":[{"id":"p081","n":"Kazimierz","d":"1784–1856","x":"","s":[{"n":"Joanna Nepomucena Świętosławska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p015","n":"Ludwika","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p073","n":"Adam Eliasz","d":"1806–1882","x":"","s":[{"n":"Julia Gadomska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p016","n":"Amelia","d":"† 1924","x":"","s":[{"n":"Adam Gadomski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p036","n":"Kazimierz Ferdynand","d":"1846–1925","x":"","s":[{"n":"Jadwiga Starża Jakubowska","d":""}],"line":false,"banner":"Pułaski","note":"","c":[{"id":"p022","n":"Józef","d":"1873–1942","x":"","s":[{"n":"Wanda Sadowska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p019","n":"Kazimierz","d":"ur. 1895","x":"","s":[{"n":"Mieczysława Jagosz","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p017","n":"Kazimierz","d":"ur. 1940","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p018","n":"Zuzanna","d":"ur. 1947","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p020","n":"Szczęsny","d":"1900–1966","x":"","s":[{"n":"Izabela Andrzejewska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p021","n":"Anna","d":"1911–1946","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p025","n":"Franciszek","d":"1875–1956","x":"","s":[{"n":"Helena Turowska-Słubicka","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p023","n":"Jadwiga","d":"ur. 1906","x":"","s":[{"n":"Andrzej Ostrowski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p024","n":"Zofia","d":"1911–1914","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p026","n":"Adam","d":"1879–1967","x":"","s":[{"n":"Janina Redczuk","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p035","n":"Helena","d":"1885–1924","x":"","s":[{"n":"Mikołaj Grabianka-Leszczyc","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p027","n":"Kazimierz","d":"ur. 1912","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p034","n":"Antoni","d":"1913–1963","x":"","s":[{"n":"Amelia Boguszewicz","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p028","n":"Mikołaj","d":"ur. 1943","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p029","n":"Stanisław","d":"ur. 1944","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p030","n":"Michał","d":"ur. 1946","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p031","n":"Maria","d":"ur. 1948","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p032","n":"Ewa","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p033","n":"Jadwiga","d":"1955–1956","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]}]},{"id":"p072","n":"Maria","d":"1851–1926","x":"","s":[{"n":"Józef Żurakowski","d":"1835–1920"}],"line":true,"banner":"Żurakowski","note":"","c":[{"id":"p037","n":"Czesław","d":"1890–1918","x":"","s":[{"n":"Zofia Duszyńska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p038","n":"Henryk","d":"1889–1919","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p047","n":"Stefania","d":"1887–1945","x":"","s":[{"n":"Stanisław Berezowski","d":""}],"line":false,"banner":"Berezowski","note":"","c":[{"id":"p039","n":"Anna","d":"ur. 1923","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p042","n":"Bolesław","d":"ur. 1916","x":"","s":[{"n":"Stefania Chmielewska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p040","n":"Elżbieta","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p041","n":"Barbara","d":"ur. 1952","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p046","n":"Maria Antonina","d":"ur. 1915","x":"","s":[{"n":"Szczepan Grodzicki","d":""},{"n":"Jerzy Rogowski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p043","n":"Jacek","d":"1938–1939","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p044","n":"Michał Adam","d":"ur. 1941","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p045","n":"Maria Ewa","d":"ur. 1944","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p053","n":"Julian","d":"1886–1964","x":"","s":[{"n":"Maria Janina Surzycka","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p051","n":"Jerzy","d":"ur. 1914","x":"","s":[{"n":"Magdalena Kosińska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p048","n":"Krzysztof","d":"ur. 1947","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p049","n":"Barbara","d":"ur. 1949","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p050","n":"Małgorzata","d":"ur. 1952","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p052","n":"Elżbieta","d":"ur. 1913","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p063","n":"Adam","d":"1884–1951","x":"","s":[{"n":"Bogumiła Ostaszewska","d":""}],"line":true,"banner":"","note":"","c":[{"id":"p054","n":"Mirosław","d":"ur. 1917","x":"","s":[{"n":"Elżbieta Wiercińska","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p056","n":"Maria","d":"ur. 1919","x":"","s":[{"n":"Julian Adamek","d":"1924–1967"}],"line":false,"banner":"","note":"","c":[{"id":"p055","n":"Maria Irena","d":"ur. 1964","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p062","n":"Stanisław","d":"ur. 1929","x":"","s":[{"n":"Teresa Dunajska","d":"1932–1962"},{"n":"Daniela Filipiak","d":"ur. 1935"}],"line":true,"banner":"","note":"","c":[{"id":"p060","n":"Małgorzata","d":"ur. 1961","x":"","s":[{"n":"Czesław Zaniewicz","d":"ur. 1957"}],"line":true,"banner":"Zaniewicz","note":"","c":[{"id":"p058","n":"Michał","d":"ur. 1985","x":"","s":[{"n":"Agnieszka Staniszewska","d":"ur. 21.12.1989"}],"line":true,"banner":"","note":"","c":[{"id":"p057","n":"Kacper","d":"ur. 10.9.2013","x":"","s":[],"line":true,"banner":"","note":"","c":[]}]},{"id":"p059","n":"Piotr","d":"ur. 1987","x":"","s":[],"line":true,"banner":"","note":"","c":[]}]},{"id":"p061","n":"Jolanta","d":"ur. 1967","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]},{"id":"p064","n":"Ewa","d":"1882–1930","x":"","s":[{"n":"Antoni Koziński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p065","n":"Ksawery","d":"1875–1932","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p071","n":"Stanisław","d":"1871–1941","x":"","s":[{"n":"Halina Ostaszewska","d":"1870–1959"}],"line":false,"banner":"","note":"","c":[{"id":"p066","n":"Maria","d":"ur. 1904","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p070","n":"Irena","d":"ur. 1899","x":"","s":[{"n":"Aleksander Boczkowski","d":"1890–1966"}],"line":false,"banner":"","note":"","c":[{"id":"p069","n":"Stanisław","d":"ur. 1919","x":"","s":[{"n":"Maria Regina Malinowska","d":"ur. 1923"}],"line":false,"banner":"","note":"","c":[{"id":"p068","n":"Ryszard","d":"ur. 8.1.1948","x":"","s":[{"n":"Sharon Keough","d":"ur. 31.10.1949"}],"line":false,"banner":"","note":"","c":[{"id":"p067","n":"Alexandra","d":"ur. 7.8.1970","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}]}]}]}]}]},{"id":"p074","n":"Eufemia","d":"† 1850","x":"","s":[{"n":"Bolesław Burzyński","d":""}],"line":false,"banner":"","note":"On the PDF the \"∞ Bolesław Burzyński\" strip spans both Eufemia and Antonina, and the line to the Burzyński children starts between them. The children are attached to Antonina here; check which sister was their mother.","c":[]},{"id":"p080","n":"Antonina","d":"† 1868","x":"","s":[{"n":"Bolesław Burzyński","d":""}],"line":false,"banner":"Burzyński","note":"On the PDF the \"∞ Bolesław Burzyński\" strip spans both Eufemia and Antonina, and the line to the Burzyński children starts between them. The children are attached to Antonina here; check which sister was their mother.","c":[{"id":"p075","n":"Zofia","d":"ur. 1898","x":"","s":[],"line":false,"banner":"","note":"Printed as \"ur. 1898\" in the same box as Kazimierz 1846–1920, although the mother died in 1868. She may belong one generation lower.","c":[]},{"id":"p076","n":"Ewelina","d":"ur. 1897","x":"","s":[],"line":false,"banner":"","note":"Printed as \"ur. 1897\" in the same box as Kazimierz 1846–1920, although the mother died in 1868. She may belong one generation lower.","c":[]},{"id":"p079","n":"Kazimierz","d":"1846–1920","x":"","s":[{"n":"Jadwiga Pruszyńska","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p077","n":"Ludwik „Bebcio”","d":"1886–1963","x":"","s":[{"n":"hr. Broel-Plater","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p078","n":"Jadwiga","d":"ur. 1890","x":"","s":[{"n":"Borys Poliakow","d":""}],"line":false,"banner":"","note":"","c":[]}]}]}]}]},{"id":"p084","n":"Józefa","d":"","x":"","s":[{"n":"Marcin Sławoszewski","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p083","n":"córka","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p085","n":"Monika","d":"ur. 1749","x":"","s":[{"n":"Stanisław Rowuziński","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p090","n":"Paulina","d":"ur. 1750","x":"","s":[{"n":"Antoni Suffczyński","d":""}],"line":false,"banner":"","note":"","c":[{"id":"p088","n":"Kazimierz","d":"","x":"","s":[],"line":false,"banner":"","note":"The line to Józefa and \"syn\" leaves the PDF box on the border between this Kazimierz and the \"córka\" of Józefa Sławoszewska. They are attached here; check which of the two was their parent.","c":[{"id":"p086","n":"Józefa","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]},{"id":"p087","n":"syn","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p089","n":"Józef","d":"","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]},{"id":"p091","n":"Małgorzata","d":"","x":"","s":[{"n":"Adam Skilski","d":""}],"line":false,"banner":"","note":"","c":[]},{"id":"p092","n":"Teresa","d":"ur. 1754","x":"","s":[],"line":false,"banner":"","note":"","c":[]}]}}</script>
+<script id="app">
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const shellEl = $('#shell'), dataEl = $('#tree-data'), origEl = $('#tree-original'), appEl = $('#app'), styleEl = $('#css');
+document.body.insertBefore(shellEl.content.cloneNode(true), shellEl);
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid = () => 'p' + Math.random().toString(36).slice(2, 9);
+const fold = s => String(s).toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '');
+const ROMAN = n => { const t = [[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']]; let r = ''; for (const [v, s] of t) while (n >= v) { r += s; n -= v; } return r; };
+
+function normChart(o) {
+  if (!o || typeof o !== 'object' || !o.root || typeof o.root !== 'object') throw new Error('This JSON has no "root" person.');
+  const seen = new Set();
+  const norm = n => {
+    if (!n || typeof n !== 'object') n = {};
+    let id = typeof n.id === 'string' && n.id && !seen.has(n.id) ? n.id : uid();
+    seen.add(id);
+    return {
+      id, n: String(n.n ?? ''), d: String(n.d ?? ''), x: String(n.x ?? ''),
+      s: Array.isArray(n.s) ? n.s.map(s => typeof s === 'string' ? {n: s, d: ''} : {n: String(s?.n ?? ''), d: String(s?.d ?? '')}) : [],
+      line: !!n.line, banner: String(n.banner ?? ''), note: String(n.note ?? ''),
+      c: Array.isArray(n.c) ? n.c.map(norm) : []
+    };
+  };
+  return {
+    title: String(o.title ?? ''), subtitle: String(o.subtitle ?? ''),
+    arms: Array.isArray(o.arms) ? o.arms.map(a => ({herb: String(a?.herb ?? ''), family: String(a?.family ?? '')})) : [],
+    savedAt: Number(o.savedAt) || 0, root: norm(o.root)
+  };
+}
+
+/* ---------- state ---------- */
+const DRAFT_KEY = 'rod-pulaskich-tree-draft-v1';
+let data = normChart(JSON.parse(dataEl.textContent));
+const savedJSON = JSON.stringify(data);
+let ui = {dir: 'lr', col: []};
+try {
+  const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+  if (d && d.base === data.savedAt && d.data) { data = normChart(d.data); if (d.ui) ui = {dir: d.ui.dir === 'td' ? 'td' : 'lr', col: Array.isArray(d.ui.col) ? d.ui.col : []}; }
+} catch (e) {}
+let collapsed = new Set(ui.col);
+let sel = null, hits = [], hitAt = -1;
+let undo = [], redo = [], editing = false;
+let view = {x: 0, y: 0, k: 1};
+let byId = new Map(), parentOf = new Map(), depthOf = new Map(), L = new Map(), bbox = {x0: 0, y0: 0, x1: 1, y1: 1};
+let artifactCap = null, downloadsCap = null, armTimer = 0;
+
+const stage = $('#stage'), world = $('#world'), links = $('#links'), panel = $('#panel');
+
+function reindex() {
+  byId = new Map(); parentOf = new Map(); depthOf = new Map();
+  const walk = (n, p, d) => { byId.set(n.id, n); parentOf.set(n.id, p); depthOf.set(n.id, d); n.c.forEach(k => walk(k, n, d + 1)); };
+  walk(data.root, null, 0);
+  if (sel && !byId.has(sel)) sel = null;
+}
+const kids = n => collapsed.has(n.id) ? [] : n.c;
+const countDesc = n => n.c.reduce((a, k) => a + 1 + countDesc(k), 0);
+const isDirty = () => JSON.stringify(data) !== savedJSON;
+
+function saveDraft() {
+  try {
+    if (isDirty() || collapsed.size || ui.dir !== 'lr') localStorage.setItem(DRAFT_KEY, JSON.stringify({base: data.savedAt, data, ui: {dir: ui.dir, col: [...collapsed]}}));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch (e) {}
+}
+function pushUndo() { undo.push(JSON.stringify(data)); if (undo.length > 120) undo.shift(); redo = []; }
+function change(fn) { pushUndo(); fn(); editing = false; refresh(true); }
+function refresh(withPanel) { render(); if (withPanel) renderPanel(); saveDraft(); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3200); }
+
+/* ---------- tree drawing ---------- */
+function cardHTML(n) {
+  let h = n.n ? '<span class="nm">' + esc(n.n) + '</span>' : '<span class="nm blank">unnamed</span>';
+  if (n.d) h += '<span class="dt">' + esc(n.d) + '</span>';
+  if (n.x) h += '<span class="x">' + esc(n.x) + '</span>';
+  for (const s of n.s) if (s.n || s.d) h += '<span class="sp">∞ ' + esc(s.n) + (s.d ? ' <i>' + esc(s.d) + '</i>' : '') + '</span>';
+  if (n.note) h += '<span class="dot" title="Has a note"></span>';
+  return h;
+}
+
+function render() {
+  reindex();
+  const lr = ui.dir === 'lr', W = lr ? 236 : 172, GAP = lr ? 8 : 12, GAPD = lr ? 66 : 62, BAN = 26;
+  world.querySelectorAll('.card,.tog,.banner,.gen').forEach(e => e.remove());
+  L = new Map();
+  const hitSet = new Set(hits);
+  const els = [];
+  const make = (n, d) => {
+    const el = document.createElement('div');
+    el.className = 'card' + (n.line ? ' line' : '') + (n.id === sel ? ' sel' : '') + (hitSet.has(n.id) ? ' hit' : '');
+    el.dataset.id = n.id; el.tabIndex = 0; el.setAttribute('role', 'button');
+    el.style.width = W + 'px'; el.innerHTML = cardHTML(n);
+    world.appendChild(el); els.push([n, el]);
+    L.set(n.id, {el, d});
+    kids(n).forEach(k => make(k, d + 1));
+  };
+  make(data.root, 0);
+  const depthSize = [];
+  for (const [n, el] of els) { const l = L.get(n.id); l.w = W; l.h = el.offsetHeight; l.b = lr ? l.h : W; depthSize[l.d] = Math.max(depthSize[l.d] || 0, lr ? W : l.h); }
+  const depthPos = []; let acc = 0;
+  depthSize.forEach((s, i) => { depthPos[i] = acc; acc += s + GAPD; });
+  const gapOf = (a, b) => GAP + ((kids(a).length || kids(b).length) ? 14 : 0);
+  const ext = n => {
+    const l = L.get(n.id), ks = kids(n);
+    if (!ks.length) return l.e = l.b;
+    let sum = (lr && n.banner) ? BAN : 0;
+    ks.forEach((k, i) => { sum += ext(k); if (i) sum += gapOf(ks[i - 1], k); });
+    l.ke = sum; return l.e = Math.max(l.b, sum);
+  };
+  const place = (n, start) => {
+    const l = L.get(n.id), ks = kids(n);
+    if (!ks.length) { l.p = start + (l.e - l.b) / 2; return; }
+    let s = start + (l.e - l.ke) / 2 + ((lr && n.banner) ? BAN : 0);
+    ks.forEach((k, i) => { if (i) s += gapOf(ks[i - 1], k); place(k, s); s += L.get(k.id).e; });
+    const a = L.get(ks[0].id), z = L.get(ks[ks.length - 1].id);
+    l.p = (a.p + a.b / 2 + z.p + z.b / 2) / 2 - l.b / 2;
+  };
+  ext(data.root); place(data.root, 0);
+  bbox = {x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9};
+  let path = '', pathMain = '';
+  for (const [n, el] of els) {
+    const l = L.get(n.id);
+    l.x = lr ? depthPos[l.d] : l.p; l.y = lr ? l.p : depthPos[l.d];
+    el.style.left = l.x + 'px'; el.style.top = l.y + 'px';
+    bbox.x0 = Math.min(bbox.x0, l.x); bbox.y0 = Math.min(bbox.y0, l.y);
+    bbox.x1 = Math.max(bbox.x1, l.x + l.w); bbox.y1 = Math.max(bbox.y1, l.y + l.h);
+  }
+  for (const [n] of els) {
+    const l = L.get(n.id), ks = kids(n);
+    if (n.c.length) {
+      const t = document.createElement('button');
+      t.type = 'button'; t.className = 'tog'; t.dataset.tog = n.id;
+      const shut = collapsed.has(n.id);
+      t.textContent = shut ? '+' + countDesc(n) : '−';
+      t.setAttribute('aria-label', (shut ? 'Show' : 'Hide') + ' descendants of ' + n.n);
+      world.appendChild(t);
+      if (lr) { t.style.left = (l.x + l.w - 4) + 'px'; t.style.top = (l.y + l.h / 2 - 10) + 'px'; }
+      else { t.style.left = (l.x + l.w / 2 - 11) + 'px'; t.style.top = (l.y + l.h - 5) + 'px'; }
+    }
+    if (!ks.length) continue;
+    const bar = depthPos[l.d + 1] - 24;
+    for (const k of ks) {
+      const c = L.get(k.id);
+      const seg = lr
+        ? 'M' + (l.x + l.w) + ',' + (l.y + l.h / 2) + 'H' + bar + 'V' + (c.y + c.h / 2) + 'H' + c.x
+        : 'M' + (l.x + l.w / 2) + ',' + (l.y + l.h) + 'V' + bar + 'H' + (c.x + c.w / 2) + 'V' + c.y;
+      if (n.line && k.line) pathMain += seg; else path += seg;
+    }
+    if (n.banner) {
+      const b = document.createElement('div'); b.className = 'banner'; b.textContent = n.banner; world.appendChild(b);
+      const first = L.get(ks[0].id);
+      if (lr) { b.style.left = first.x + 'px'; b.style.top = (first.y - BAN + 1) + 'px'; }
+      else { b.style.left = (l.x + l.w / 2 - b.offsetWidth / 2) + 'px'; b.style.top = (bar - b.offsetHeight / 2) + 'px'; }
+    }
+  }
+  depthPos.forEach((p, i) => {
+    const g = document.createElement('div'); g.className = 'gen';
+    g.innerHTML = ROMAN(i + 1) + '<small>generation</small>'; world.appendChild(g);
+    if (lr) { g.style.left = p + 'px'; g.style.top = (bbox.y0 - 56) + 'px'; }
+    else { g.style.left = (bbox.x0 - 110) + 'px'; g.style.top = p + 'px'; }
+  });
+  links.innerHTML = '<path d="' + path + '"/><path class="main" d="' + pathMain + '"/>';
+  $('#t-title').textContent = data.title || 'Untitled tree';
+  $('#t-sub').textContent = data.subtitle;
+  $('#b-undo').disabled = !undo.length; $('#b-redo').disabled = !redo.length;
+  $('#b-lr').setAttribute('aria-pressed', lr); $('#b-td').setAttribute('aria-pressed', !lr);
+  const st = $('#status'), dirty = isDirty();
+  st.className = 'pill' + (dirty ? ' dirty' : '');
+  st.textContent = dirty ? (artifactCap ? 'Unsaved edits' : 'Edits kept in this browser') : (data.savedAt ? 'Saved' : 'As parsed from the PDF');
+  $('#b-save').disabled = !dirty;
+}
+
+function applyView(glide) {
+  world.classList.toggle('glide', !!glide);
+  world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
+}
+function fit(glide) {
+  const w = stage.clientWidth, h = stage.clientHeight, pad = 70;
+  const bw = bbox.x1 - bbox.x0 + 2 * pad, bh = bbox.y1 - bbox.y0 + 2 * pad;
+  view.k = Math.max(0.05, Math.min(1, w / bw, h / bh));
+  view.x = (w - (bbox.x0 + bbox.x1) * view.k) / 2; view.y = (h - (bbox.y0 + bbox.y1) * view.k) / 2;
+  applyView(glide);
+}
+function home() {
+  fit(false);
+  if (view.k < 0.5) {
+    const r = L.get(data.root.id), w = stage.clientWidth, h = stage.clientHeight;
+    view.k = 0.5;
+    if (ui.dir === 'lr') { view.x = 40 - r.x * view.k; view.y = h / 2 - (r.y + r.h / 2) * view.k; }
+    else { view.x = w / 2 - (r.x + r.w / 2) * view.k; view.y = 50 - r.y * view.k; }
+    applyView(false);
+  }
+}
+function centerOn(id) {
+  const l = L.get(id); if (!l) return;
+  if (view.k < 0.55) view.k = 0.8;
+  view.x = stage.clientWidth / 2 - (l.x + l.w / 2) * view.k; view.y = stage.clientHeight / 2 - (l.y + l.h / 2) * view.k;
+  applyView(true);
+}
+function zoomAt(f, cx, cy) {
+  const k = Math.max(0.05, Math.min(2.5, view.k * f)); f = k / view.k;
+  view.x = cx - (cx - view.x) * f; view.y = cy - (cy - view.y) * f; view.k = k; applyView(false);
+}
+function reveal(id) { let p = parentOf.get(id), ch = false; while (p) { if (collapsed.delete(p.id)) ch = true; p = parentOf.get(p.id); } return ch; }
+function select(id, center) {
+  sel = id; editing = false;
+  if (id) reveal(id);
+  refresh(true);
+  if (id && center) centerOn(id);
+}
+
+/* ---------- pointer: pan, pinch, click ---------- */
+const ptrs = new Map(); let down = null, moved = false, pinch = 0;
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('.zoom')) return;
+  ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (ptrs.size === 1) { down = {t: e.target, x: e.clientX, y: e.clientY, vx: view.x, vy: view.y}; moved = false; }
+  else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = true; }
+  try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+});
+stage.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  const r = stage.getBoundingClientRect();
+  if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()], dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch) zoomAt(dist / pinch, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
+    pinch = dist; return;
+  }
+  if (!down) return;
+  const dx = e.clientX - down.x, dy = e.clientY - down.y;
+  if (!moved && Math.hypot(dx, dy) < 5) return;
+  moved = true; stage.classList.add('drag');
+  view.x = down.vx + dx; view.y = down.vy + dy; applyView(false);
+});
+const endPtr = e => {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId); stage.classList.remove('drag');
+  if (ptrs.size === 1) { const p = [...ptrs.values()][0]; down = {t: null, x: p.x, y: p.y, vx: view.x, vy: view.y}; pinch = 0; return; }
+  if (ptrs.size) return;
+  const d = down; down = null; pinch = 0;
+  if (!d || moved || e.type === 'pointercancel' || !d.t || !d.t.closest) return;
+  const tg = d.t.closest('.tog'), card = d.t.closest('.card');
+  if (tg) toggle(tg.dataset.tog);
+  else if (card) select(card.dataset.id, false);
+  else if (sel) select(null, false);
+};
+stage.addEventListener('pointerup', endPtr); stage.addEventListener('pointercancel', endPtr);
+stage.addEventListener('wheel', e => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0016)), e.clientX - r.left, e.clientY - r.top); }, {passive: false});
+world.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.card'), tg = e.target.closest('.tog');
+  if (tg) { e.preventDefault(); toggle(tg.dataset.tog); }
+  else if (card) { e.preventDefault(); select(card.dataset.id, false); const f = $('#f-n'); if (f) f.focus(); }
+});
+function toggle(id) { if (!collapsed.delete(id)) collapsed.add(id); refresh(false); }
+$('#b-in').onclick = () => zoomAt(1.25, stage.clientWidth / 2, stage.clientHeight / 2);
+$('#b-out').onclick = () => zoomAt(0.8, stage.clientWidth / 2, stage.clientHeight / 2);
+$('#b-fit').onclick = () => fit(true);
+$('#b-lr').onclick = () => { ui.dir = 'lr'; refresh(false); sel ? centerOn(sel) : home(); };
+$('#b-td').onclick = () => { ui.dir = 'td'; refresh(false); sel ? centerOn(sel) : home(); };
+
+/* ---------- side panel ---------- */
+function label(n) { return (n.n || 'unnamed') + (n.d ? ' · ' + n.d : ''); }
+function renderPanel() {
+  if (!sel) {
+    let people = 0, gens = 0; for (const [, d] of depthOf) { people++; gens = Math.max(gens, d + 1); }
+    let spouses = 0; for (const [, n] of byId) spouses += n.s.filter(s => s.n).length;
+    panel.innerHTML =
+      '<div><h2>Chart</h2><p class="sub">Click a person in the tree to edit them.</p></div>' +
+      '<div class="stats"><div><b>' + people + '</b><span>people</span></div><div><b>' + spouses + '</b><span>spouses</span></div><div><b>' + gens + '</b><span>generations</span></div></div>' +
+      '<div class="fld"><label for="c-title">Title</label><input id="c-title" data-cf="title" value="' + esc(data.title) + '"></div>' +
+      '<div class="fld"><label for="c-sub">Subtitle</label><input id="c-sub" data-cf="subtitle" value="' + esc(data.subtitle) + '"></div>' +
+      '<div class="sect"><h3>Coats of arms</h3><div class="stack">' +
+      data.arms.map((a, i) => '<div class="row"><input id="a-h' + i + '" data-af="herb" data-i="' + i + '" value="' + esc(a.herb) + '" aria-label="Coat of arms"><input id="a-f' + i + '" data-af="family" data-i="' + i + '" value="' + esc(a.family) + '" aria-label="Family"><button class="btn sq" type="button" data-act="rm-arm" data-i="' + i + '" aria-label="Remove coat of arms">×</button></div>').join('') +
+      '</div><div class="acts"><button class="btn" type="button" data-act="add-arm">Add coat of arms</button></div></div>' +
+      '<div class="sect"><h3>Reading the tree</h3><p class="help">Crimson marks the main line highlighted in the PDF. Blue tags are the family banners over a group of children. A small amber dot means the person has a note. ∞ is a marriage, ur. a birth, † a death.</p></div>';
+    return;
+  }
+  const n = byId.get(sel), p = parentOf.get(sel), sib = p ? p.c : [], ix = sib.indexOf(n);
+  const inSub = new Set(); (function w(m) { inSub.add(m.id); m.c.forEach(w); })(n);
+  let opts = '<option value="">Choose a new parent…</option>';
+  (function w(m, d) { if (!inSub.has(m.id) && m !== p) opts += '<option value="' + m.id + '">' + ROMAN(d + 1) + ' · ' + esc(label(m)) + '</option>'; m.c.forEach(k => w(k, d + 1)); })(data.root, 0);
+  const nd = countDesc(n);
+  panel.innerHTML =
+    '<div><h2>' + esc(n.n || 'Unnamed') + '</h2><p class="sub">Generation ' + ROMAN(depthOf.get(sel) + 1) + (p ? ' · child of ' + esc(p.n || 'unnamed') : ' · founder') + (nd ? ' · ' + nd + ' descendant' + (nd > 1 ? 's' : '') : '') + '</p></div>' +
+    '<div class="fld"><label for="f-n">Name</label><input id="f-n" data-f="n" value="' + esc(n.n) + '"></div>' +
+    '<div class="fld"><label for="f-d">Dates, as on the chart</label><input id="f-d" data-f="d" value="' + esc(n.d) + '" placeholder="ur. 1895 · 1873–1942 · † 1840"></div>' +
+    '<div class="fld"><label for="f-x">Extra line on the card</label><input id="f-x" data-f="x" value="' + esc(n.x) + '" placeholder="† place of death, title…"></div>' +
+    '<div class="sect"><h3>Spouses</h3><div class="stack">' +
+    n.s.map((s, i) => '<div class="row"><input id="s-n' + i + '" data-sf="n" data-i="' + i + '" value="' + esc(s.n) + '" placeholder="Name" aria-label="Spouse name"><input id="s-d' + i + '" data-sf="d" data-i="' + i + '" value="' + esc(s.d) + '" placeholder="Dates" aria-label="Spouse dates"><button class="btn sq" type="button" data-act="rm-spouse" data-i="' + i + '" aria-label="Remove spouse">×</button></div>').join('') +
+    '</div><div class="acts"><button class="btn" type="button" data-act="add-spouse">Add spouse</button></div></div>' +
+    '<div class="sect"><div class="fld"><label for="f-banner">Family banner over the children</label><input id="f-banner" data-f="banner" value="' + esc(n.banner) + '" placeholder="e.g. Żurakowski"></div>' +
+    '<label class="chk" for="f-line"><input id="f-line" type="checkbox" data-f="line"' + (n.line ? ' checked' : '') + '>On the highlighted main line</label>' +
+    '<div class="fld"><label for="f-note">Note (not shown on the card)</label><textarea id="f-note" data-f="note">' + esc(n.note) + '</textarea></div></div>' +
+    '<div class="sect"><h3>Structure</h3><div class="acts">' +
+    '<button class="btn primary" type="button" data-act="add-child">Add child</button>' +
+    '<button class="btn" type="button" data-act="add-sib"' + (p ? '' : ' disabled') + '>Add sibling</button>' +
+    '<button class="btn" type="button" data-act="up"' + (ix > 0 ? '' : ' disabled') + '>Move earlier</button>' +
+    '<button class="btn" type="button" data-act="down"' + (p && ix < sib.length - 1 ? '' : ' disabled') + '>Move later</button></div>' +
+    (p ? '<div class="fld"><label for="f-move">Move under another parent</label><select id="f-move">' + opts + '</select></div>' : '') +
+    '<div class="acts"><button class="btn danger" type="button" data-act="del"' + (p ? '' : ' disabled') + '>' + (nd ? 'Delete with ' + nd + ' descendant' + (nd > 1 ? 's' : '') : 'Delete') + '</button>' +
+    '<button class="btn" type="button" data-act="close">Done</button></div></div>';
+}
+panel.addEventListener('focusin', () => { editing = false; });
+panel.addEventListener('input', e => {
+  const t = e.target, n = sel && byId.get(sel);
+  if (t.id === 'f-move') return;
+  if (!(t.dataset.f || t.dataset.sf || t.dataset.cf || t.dataset.af)) return;
+  if (!editing) { pushUndo(); editing = true; }
+  if (t.dataset.f && n) { if (t.dataset.f === 'line') n.line = t.checked; else n[t.dataset.f] = t.value; if (t.dataset.f === 'n') $('h2', panel).textContent = t.value || 'Unnamed'; }
+  else if (t.dataset.sf && n) n.s[+t.dataset.i][t.dataset.sf] = t.value;
+  else if (t.dataset.cf) data[t.dataset.cf] = t.value;
+  else if (t.dataset.af) data.arms[+t.dataset.i][t.dataset.af] = t.value;
+  refresh(false);
+});
+panel.addEventListener('change', e => {
+  if (e.target.id !== 'f-move' || !e.target.value) return;
+  const n = byId.get(sel), p = parentOf.get(sel), np = byId.get(e.target.value);
+  if (!n || !p || !np) return;
+  change(() => { p.c.splice(p.c.indexOf(n), 1); np.c.push(n); collapsed.delete(np.id); });
+  centerOn(sel); toast('Moved under ' + (np.n || 'unnamed') + '.');
+});
+panel.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, n = sel && byId.get(sel), p = sel && parentOf.get(sel), i = +b.dataset.i;
+  if (act !== 'del') clearTimeout(armTimer);
+  if (act === 'add-arm') { change(() => data.arms.push({herb: '', family: ''})); const f = $('#a-h' + (data.arms.length - 1)); if (f) f.focus(); }
+  else if (act === 'rm-arm') change(() => data.arms.splice(i, 1));
+  else if (act === 'close') select(null, false);
+  if (!n) return;
+  const fresh = () => ({id: uid(), n: '', d: '', x: '', s: [], line: false, banner: '', note: '', c: []});
+  if (act === 'add-spouse') { change(() => n.s.push({n: '', d: ''})); const f = $('#s-n' + (n.s.length - 1)); if (f) f.focus(); }
+  else if (act === 'rm-spouse') change(() => n.s.splice(i, 1));
+  else if (act === 'add-child' || (act === 'add-sib' && p)) {
+    const k = fresh();
+    change(() => { if (act === 'add-child') { n.c.push(k); collapsed.delete(n.id); } else p.c.splice(p.c.indexOf(n) + 1, 0, k); sel = k.id; });
+    centerOn(k.id); const f = $('#f-n'); if (f) f.focus();
+  }
+  else if ((act === 'up' || act === 'down') && p) {
+    const ix = p.c.indexOf(n), j = ix + (act === 'up' ? -1 : 1);
+    if (j >= 0 && j < p.c.length) { change(() => { p.c.splice(ix, 1); p.c.splice(j, 0, n); }); const nb = $('[data-act="' + act + '"]', panel); if (nb && !nb.disabled) nb.focus(); }
+  }
+  else if (act === 'del' && p) {
+    if (n.c.length && !b.classList.contains('armed')) {
+      b.classList.add('armed'); b.textContent = 'Click again to delete ' + (countDesc(n) + 1) + ' people';
+      armTimer = setTimeout(() => { if (sel === n.id) renderPanel(); }, 4000); return;
+    }
+    clearTimeout(armTimer);
+    change(() => { p.c.splice(p.c.indexOf(n), 1); sel = null; });
+    toast('Deleted. Undo brings it back.');
+  }
+});
+
+/* ---------- toolbar ---------- */
+function restore(from, to) {
+  if (!from.length) return;
+  to.push(JSON.stringify(data)); data = normChart(JSON.parse(from.pop())); editing = false; refresh(true);
+}
+$('#b-undo').onclick = () => restore(undo, redo);
+$('#b-redo').onclick = () => restore(redo, undo);
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  e.preventDefault(); e.shiftKey ? restore(redo, undo) : restore(undo, redo);
+});
+const q = $('#q');
+function runSearch() {
+  const s = fold(q.value.trim()); hits = []; hitAt = -1;
+  if (s) for (const [id, n] of byId) if (fold([n.n, n.d, n.x, n.note, ...n.s.map(x => x.n + ' ' + x.d)].join(' ')).includes(s)) hits.push(id);
+  $('#q-n').textContent = s ? (hits.length ? hits.length + ' found' : 'none') : '';
+  render();
+}
+q.addEventListener('input', runSearch);
+q.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !hits.length) return;
+  hitAt = (hitAt + (e.shiftKey ? hits.length - 1 : 1)) % hits.length;
+  $('#q-n').textContent = (hitAt + 1) + '/' + hits.length;
+  select(hits[hitAt], true); q.focus();
+});
+const resetBtn = $('#b-reset');
+resetBtn.onclick = () => {
+  if (!resetBtn.classList.contains('armed')) {
+    resetBtn.classList.add('armed'); resetBtn.textContent = 'Click again to reset';
+    setTimeout(() => { resetBtn.classList.remove('armed'); resetBtn.textContent = 'Reset to PDF'; }, 4000); return;
+  }
+  resetBtn.classList.remove('armed'); resetBtn.textContent = 'Reset to PDF';
+  const keep = data.savedAt;
+  change(() => { data = normChart(JSON.parse(origEl.textContent)); data.savedAt = keep; sel = null; collapsed = new Set(); });
+  home(); toast('Back to the tree as parsed from the PDF. Undo restores your edits.');
+};
+document.addEventListener('click', e => { const c = e.target.closest('[data-close]'); if (c) c.closest('dialog').close(); });
+$('#b-export').onclick = () => { $('#ex-text').value = JSON.stringify(data, null, 1); $('#dlg-export').showModal(); $('#ex-text').select(); };
+$('#ex-copy').onclick = async () => {
+  const t = $('#ex-text');
+  try { await navigator.clipboard.writeText(t.value); toast('Copied the tree as JSON.'); }
+  catch (e) { t.focus(); t.select(); toast('Copying was blocked. The text is selected: press Ctrl or ⌘ + C.'); }
+};
+$('#ex-dl').onclick = async () => {
+  try { await downloadsCap.save({filename: 'rod-pulaskich-tree.json', data: $('#ex-text').value}); }
+  catch (e) { toast('The download did not go through. Use Copy instead.'); }
+};
+$('#b-import').onclick = () => { $('#im-err').textContent = ''; $('#im-text').value = ''; $('#im-file').value = ''; $('#dlg-import').showModal(); };
+$('#im-file').onchange = async e => { const f = e.target.files[0]; if (f) $('#im-text').value = await f.text(); };
+$('#im-go').onclick = () => {
+  let next;
+  try { next = normChart(JSON.parse($('#im-text').value)); }
+  catch (e) { $('#im-err').textContent = 'Could not read that: ' + e.message + ' Paste the JSON from Export.'; return; }
+  const keep = data.savedAt;
+  change(() => { data = next; data.savedAt = keep; sel = null; collapsed = new Set(); });
+  $('#dlg-import').close(); home(); toast('Imported ' + byId.size + ' people.');
+};
+
+/* ---------- saving into the page ---------- */
+function buildDoc() {
+  const J = o => JSON.stringify(o).replace(/</g, '\\u003c');
+  const head = [...document.head.querySelectorAll('[data-keep]')].map(e => e.outerHTML).join('\n');
+  const S = 'script';
+  return '<!DOCTYPE html>\n<html lang="pl">\n<head>\n' + head + '\n<style id="css">' + styleEl.textContent + '</style>\n</head>\n<body>\n' +
+    '<template id="shell">' + shellEl.innerHTML + '</template>\n' +
+    '<' + S + ' type="application/json" id="tree-data">' + J(data) + '</' + S + '>\n' +
+    '<' + S + ' type="application/json" id="tree-original">' + origEl.textContent + '</' + S + '>\n' +
+    '<' + S + ' id="app">' + appEl.textContent + '</' + S + '>\n</body>\n</html>\n';
+}
+$('#b-save').onclick = async () => {
+  if (!artifactCap) return;
+  const btn = $('#b-save'), prev = data.savedAt;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    data.savedAt = Date.now();
+    await artifactCap.publish(buildDoc());
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    toast('Saved. The page reloads with your edits.');
+  } catch (e) {
+    data.savedAt = prev;
+    const code = String((e && (e.code || e.message)) || '');
+    toast(/not_granted|not_writer/.test(code) ? 'You can view this page but not save to it. Use Export to keep your edits.' : /conflict/.test(code) ? 'Someone else saved first. The page reloads with their version.' : 'Saving did not work. Your edits stay in this browser; Export keeps a copy.');
+    btn.textContent = 'Save to page'; render();
+  }
+};
+if (window.claude && typeof window.claude.use === 'function') {
+  window.claude.use('artifact').then(a => { if (a) { artifactCap = a; $('#b-save').hidden = false; render(); } }).catch(() => {});
+  window.claude.use('downloads').then(d => { if (d) { downloadsCap = d; $('#ex-dl').hidden = false; } }).catch(() => {});
+}
+
+/* ---------- start ---------- */
+render(); renderPanel(); home();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { render(); home(); });
+let rz = 0; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => applyView(false), 100); });
+})();
+</script>
+</body>
+</html>
